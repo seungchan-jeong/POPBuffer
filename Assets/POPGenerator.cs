@@ -35,7 +35,6 @@ public class POPGenerator : MonoBehaviour
     private void Update()
     {
         int quantizationLevel = (int)Time.realtimeSinceStartup % 8 + 1;
-        // Debug.Log("Quantization Level : " + quantizationLevel);
         ApplyPOPBuffer(_mesh, quantizationLevel);
     }
 
@@ -208,7 +207,7 @@ class POPBuffer
             return null;
 
         Vector3 min = Vector3.zero;
-        Vector3 max = Vector3.one * ((1 << bits) - 1);
+        Vector3 max = Vector3.one * (bits >= (sizeof(int) * 8) ? int.MaxValue : (1 << bits) - 1);
         Bounds targetBounds = new Bounds((max + min) * 0.5f, max - min);
 
         positions = RescaleVertices(positions, targetBounds, sourceBound);
