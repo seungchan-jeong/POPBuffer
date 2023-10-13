@@ -13,6 +13,7 @@ using UnityEngine.Rendering;
 [RequireComponent(typeof(MeshFilter))]
 public class POPGenerator : MonoBehaviour
 {
+    public int LevelClamp = 8;
     public SliderUI triangleSlider;
     public SliderUI vertexSlider;
     public SliderUI quantizationSlider;
@@ -34,15 +35,15 @@ public class POPGenerator : MonoBehaviour
 
     private void Update()
     {
-        int quantizationLevel = (int)Time.realtimeSinceStartup % 8 + 1;
+        int quantizationLevel = (int)Time.realtimeSinceStartup % LevelClamp + 1;
         ApplyPOPBuffer(_mesh, quantizationLevel);
     }
 
     private void ApplyPOPBuffer(Mesh mesh, int quantizationLevel)
     {
-        (NativeArray<float3> verticesNative, NativeArray<uint> indicesNative) = POPBuffer.Decode(_popBuffer, quantizationLevel);
+        (NativeArray<float3> verticesNative, NativeArray<uint> indicesNative, NativeArray<float2> uvNative) = POPBuffer.Decode(_popBuffer, quantizationLevel);
         
-        int vertexAttributeCount = 1; //Position (, Normal, Tangent, UV, Vertex Color etc...)
+        int vertexAttributeCount = 2; //Position UV (Normal, Tangent, Vertex Color etc...)
         int vertexCount = verticesNative.Length;
         int triangleIndexCount = indicesNative.Length;
 
@@ -51,11 +52,15 @@ public class POPGenerator : MonoBehaviour
 
         var vertexAttributes = new NativeArray<VertexAttributeDescriptor>(vertexAttributeCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
         vertexAttributes[0] = new VertexAttributeDescriptor(dimension: 3);
+        vertexAttributes[1] = new VertexAttributeDescriptor(VertexAttribute.TexCoord0, dimension: 2, stream: 1); //position만 stream 0 나머진 다 stream 1
         meshData.SetVertexBufferParams(vertexCount, vertexAttributes);
         vertexAttributes.Dispose();
 
         NativeArray<float3> positions = meshData.GetVertexData<float3>();
         positions.CopyFrom(verticesNative); //TODO 아에 여기다가 맨 처음부터 카피하도록??
+        
+        NativeArray<float2> texCoords = meshData.GetVertexData<float2>(1);
+        texCoords.CopyFrom(uvNative);
         
         meshData.SetIndexBufferParams(triangleIndexCount, IndexFormat.UInt32);
         NativeArray<uint> indices = meshData.GetIndexData<uint>();
@@ -81,14 +86,17 @@ public class POPGenerator : MonoBehaviour
 
 struct Level
 {
-    public Level(List<Vector3Int> cells, List<Vector3> positions)
+    public Level(List<Vector3Int> cells, List<Vector3> positions, List<Vector2> uvs)
     {
         this.cells = cells;
         this.positions = positions;
+        this.uvs = uvs;
     }
 
     public List<Vector3Int> cells { get; } //삼각형 index
     public List<Vector3> positions { get; } //삼각형 vertex
+
+    public List<Vector2> uvs;
 }
 
 class POPBuffer
@@ -96,15 +104,15 @@ class POPBuffer
     private Bounds boundingBox;
     private List<Level> levels; //TODO streaming을 하지 않을 거라면 level별로 position을 나눌 필요가 없다. index만 나눠지면 된다. 
 
-    public static (NativeArray<float3> vertices, NativeArray<uint> indices) Decode(POPBuffer popBuffer, int quantizationLevel)
+    public static (NativeArray<float3> vertices, NativeArray<uint> indices, NativeArray<float2> uvs) Decode(POPBuffer popBuffer, int quantizationLevel)
     {
         //현재 quantizationLevel이 32이상일 경우 indices에서 문제가 있는 듯함. (31일 때랑 index, vertex 갯수가 같은데 이상하게 에러가 생김)
         List<uint> indices = popBuffer.levels.Take(quantizationLevel).Select(level => level.cells)
             .SelectMany(cells => cells).SelectMany(tri => new uint[]{ (uint)tri.x, (uint)tri.y, (uint)tri.z}).ToList();
         List<Vector3> positions = popBuffer.levels.Take(quantizationLevel).Select(level => level.positions)
             .SelectMany(positions => positions).ToList();
-        // Debug.Log("Vertex Count : " + positions.Count);
-        // Debug.Log("Index Count : " + indices.Count);
+        List<Vector2> uvs = popBuffer.levels.Take(quantizationLevel).Select(level => level.uvs)
+            .SelectMany(uvs => uvs).ToList();
         
         if (indices.Count != 0 && positions.Count != 0) //TODO 왜 여기서 positions을 또 quantize 하는거? 
         {
@@ -113,7 +121,7 @@ class POPBuffer
         }
         
         
-        return (GetNativeVertexArrays(positions.ToArray()), new NativeArray<uint>(indices.ToArray(), Allocator.Temp));
+        return (GetNativeVertexArrays(positions.ToArray()), new NativeArray<uint>(indices.ToArray(), Allocator.Temp), GetNativeVertexArrays(uvs.ToArray()));
     }
     
     public static unsafe NativeArray<float3> GetNativeVertexArrays(Vector3[] vertexArray) //https://gist.github.com/LotteMakesStuff/c2f9b764b15f74d14c00ceb4214356b4
@@ -135,6 +143,26 @@ class POPBuffer
 
         return verts;
     }
+    
+    public static unsafe NativeArray<float2> GetNativeVertexArrays(Vector2[] vertexArray) //https://gist.github.com/LotteMakesStuff/c2f9b764b15f74d14c00ceb4214356b4
+    {
+        // create a destination NativeArray to hold the vertices
+        NativeArray<float2> verts = new NativeArray<float2>(vertexArray.Length, Allocator.Persistent,
+            NativeArrayOptions.UninitializedMemory);
+
+        // pin the mesh's vertex buffer in place...
+        fixed (void* vertexBufferPointer = vertexArray)
+        {
+            // ...and use memcpy to copy the Vector3[] into a NativeArray<floar3> without casting. whould be fast!
+            UnsafeUtility.MemCpy(NativeArrayUnsafeUtility.GetUnsafeBufferPointerWithoutChecks(verts),
+                vertexBufferPointer, vertexArray.Length * (long) UnsafeUtility.SizeOf<float2>());
+        }
+        // we only hve to fix the .net array in place, the NativeArray is allocated in the C++ side of the engine and
+        // wont move arround unexpectedly. We have a pointer to it not a reference! thats basically what fixed does,
+        // we create a scope where its 'safe' to get a pointer and directly manipulate the array
+
+        return verts;
+    }
 
     public static POPBuffer GeneratePopBuffer(Mesh mesh)
     {
@@ -149,15 +177,18 @@ class POPBuffer
         List<Vector3> positions = new List<Vector3>();
         mesh.GetVertices(positions);
 
-        return Encode(mesh.bounds, cells, positions, 32);
+        List<Vector2> uvs = new List<Vector2>();
+        mesh.GetUVs(0, uvs);
+
+        return Encode(mesh.bounds, cells, positions, uvs, 32);
     }
 
-    static POPBuffer Encode(Bounds boundingBox, List<Vector3Int> cells, List<Vector3> positions, int maxLevel)
+    static POPBuffer Encode(Bounds boundingBox, List<Vector3Int> cells, List<Vector3> positions, List<Vector2> uvs, int maxLevel)
     {
         // Bounds boundingBox = ComputeBoundingBox(positions);
 
         List<List<Vector3Int>> buckets = BuildBuckets(boundingBox, cells, positions, maxLevel);
-        List<Level> levels = BuildLevels(buckets, positions);
+        List<Level> levels = BuildLevels(buckets, positions, uvs);
 
         return new POPBuffer() { boundingBox = boundingBox, levels = levels };
     }
@@ -261,7 +292,7 @@ class POPBuffer
         return a == b || b == c  || c == a;
     }
     
-    static List<Level> BuildLevels(List<List<Vector3Int>> buckets, List<Vector3> positions) //TODO 이게 최선? 
+    static List<Level> BuildLevels(List<List<Vector3Int>> buckets, List<Vector3> positions, List<Vector2> uvs) //TODO 이게 최선? 
     {
         List<Level> levels = new List<Level>(buckets.Count);
         Dictionary<int, int> indexLookup = new Dictionary<int, int>();
@@ -272,6 +303,7 @@ class POPBuffer
             List<Vector3Int> cells = buckets[i];
             List<Vector3Int> newCells = new List<Vector3Int>();
             List<Vector3> newPositions = new List<Vector3>();
+            List<Vector2> newUVs = new List<Vector2>();
             
             for (int j = 0; j < cells.Count; j++)
             {
@@ -282,6 +314,7 @@ class POPBuffer
                     if (!indexLookup.ContainsKey(tri[k]))
                     {
                         newPositions.Add(positions[tri[k]]);
+                        newUVs.Add(uvs[tri[k]]);
                         indexLookup.Add(tri[k], lastIndex++);
                     }
                     newTri[k] = indexLookup[tri[k]];
@@ -290,7 +323,7 @@ class POPBuffer
                 newCells.Add(newTri);
             }
             
-            levels.Add(new Level(newCells, newPositions));
+            levels.Add(new Level(newCells, newPositions, newUVs));
         }
         return levels;
     }
