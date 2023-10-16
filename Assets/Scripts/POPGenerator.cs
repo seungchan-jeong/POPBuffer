@@ -20,7 +20,7 @@ public class POPGenerator : MonoBehaviour
     
     private POPBuffer _popBuffer;
 
-    private Mesh _mesh;
+    private UnityEngine.Mesh _mesh;
     // Start is called before the first frame update
     private void Start()
     {
@@ -39,7 +39,7 @@ public class POPGenerator : MonoBehaviour
         ApplyPOPBuffer(_mesh, quantizationLevel);
     }
 
-    private void ApplyPOPBuffer(Mesh mesh, int quantizationLevel)
+    private void ApplyPOPBuffer(UnityEngine.Mesh mesh, int quantizationLevel)
     {
         (NativeArray<float3> verticesNative, NativeArray<uint> indicesNative, NativeArray<float2> uvNative, List<int> subMeshIndexCount) = POPBuffer.Decode(_popBuffer, quantizationLevel);
         
@@ -47,9 +47,9 @@ public class POPGenerator : MonoBehaviour
         int vertexCount = verticesNative.Length;
         int triangleIndexCount = indicesNative.Length;
 
-        Mesh.MeshDataArray meshDataArray = Mesh.AllocateWritableMeshData(1); //TODO : submesh Count로 대체
+        UnityEngine.Mesh.MeshDataArray meshDataArray = UnityEngine.Mesh.AllocateWritableMeshData(1); //TODO : submesh Count로 대체
         //?? 이걸 submesh Count로 바꾸면, meshData마다 똑같은 vertex를 설정해줘야하는건가? 아니면 0번째만 vertex설정해주면 되는건가? 알아보기 
-        Mesh.MeshData meshData = meshDataArray[0];
+        UnityEngine.Mesh.MeshData meshData = meshDataArray[0];
 
         var vertexAttributes = new NativeArray<VertexAttributeDescriptor>(vertexAttributeCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
         vertexAttributes[0] = new VertexAttributeDescriptor(dimension: 3);
@@ -79,7 +79,7 @@ public class POPGenerator : MonoBehaviour
         }
         
         // mesh.bounds = mesh.bounds;  //TODO POP bound로 대체
-        Mesh.ApplyAndDisposeWritableMeshData(meshDataArray, mesh);
+        UnityEngine.Mesh.ApplyAndDisposeWritableMeshData(meshDataArray, mesh);
         mesh.RecalculateNormals();
         
         triangleSlider.SetCurrentValue(indicesNative.Length);
@@ -88,7 +88,7 @@ public class POPGenerator : MonoBehaviour
     }
 }
 
-struct Triangle
+struct Triangle : IEnumerable<int>
 {
     private int p1;
     private int p2;
@@ -135,122 +135,124 @@ struct Triangle
             }
         }
     }
+
+    public IEnumerator<int> GetEnumerator()
+    {
+        yield return p1;
+        yield return p2;
+        yield return p3;
+    }
+
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
+    }
 }
 
-class Level
+class QuantizedMesh
 {
-    public Level(CellPerLevel cells, List<Vector3> positions, List<Vector2> uvs)
+    public QuantizedMesh(MeshIndices meshIndices, List<Vector3> vertices, List<Vector2> uvs)
     {
-        this.cells = cells;
-        this.positions = positions;
-        this.uvs = uvs;
+        this.MeshIndices = meshIndices;
+        this.Vertices = vertices;
+        this.UVs = uvs;
     }
     
-    public CellPerLevel cells { get; } //삼각형 index
-    public List<Vector3> positions { get; } //삼각형 vertex
-    public List<Vector2> uvs { get; }
+    public MeshIndices MeshIndices { get; } //삼각형 index
+    public List<Vector3> Vertices { get; } //삼각형 vertex
+    public List<Vector2> UVs { get; }
 }
 
-class CellPerSubmesh
+class SubMeshIndices : IEnumerable<Triangle>
 {
-    public List<Triangle> cells;
+    public List<Triangle> tris;
 
-    public CellPerSubmesh(List<Triangle> cells)
+    public SubMeshIndices(List<Triangle> tris)
     {
-        this.cells = cells;
+        this.tris = tris;
     }
 
-    public CellPerSubmesh(int count)
+    public SubMeshIndices(int count)
     {
-        cells = new List<Triangle>(count);
+        tris = new List<Triangle>(count);
     }
     
     public Triangle this[int index]
     {
-        get => cells[index];
-        set => cells[index] = value;
+        get => tris[index];
+        set => tris[index] = value;
     }
     
     public int Count
     {
-        get => cells.Count;
+        get => tris.Count;
     }
 
     public void Add(Triangle elem)
     {
-        cells.Add(elem);
+        tris.Add(elem);
+    }
+
+    public IEnumerator<Triangle> GetEnumerator()
+    {
+        return tris.GetEnumerator();
+    }
+
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
     }
 }
-class CellPerLevel
+class MeshIndices : IEnumerable<SubMeshIndices>
 {
-    public List<CellPerSubmesh> cellPerSubmeshes; //List<List<Vector3Int>> 
+    public List<SubMeshIndices> subMeshes;
 
-    public CellPerLevel(int count)
+    public MeshIndices(int count)
     {
-        cellPerSubmeshes = Enumerable.Range(0, count).Select(_ => new CellPerSubmesh(0)).ToList(); 
+        subMeshes = Enumerable.Range(0, count).Select(_ => new SubMeshIndices(0)).ToList(); 
     }
 
-    public CellPerSubmesh this[int index]
+    public SubMeshIndices this[int index]
     {
-        get => cellPerSubmeshes[index];
-        set => cellPerSubmeshes[index] = value;
+        get => subMeshes[index];
+        set => subMeshes[index] = value;
     }
     
     public int Count
     {
-        get => cellPerSubmeshes.Count;
+        get => subMeshes.Count;
     }
 
-    public void Add(CellPerSubmesh elem)
+    public void Add(SubMeshIndices elem)
     {
-        cellPerSubmeshes.Add(elem);
+        subMeshes.Add(elem);
+    }
+
+    public IEnumerator<SubMeshIndices> GetEnumerator()
+    {
+        return subMeshes.GetEnumerator();
+    }
+
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
     }
 }
 
 class POPBuffer
 {
     private Bounds boundingBox;
-    private List<Level> levels; //TODO streaming을 하지 않을 거라면 level별로 position을 나눌 필요가 없다. index만 나눠지면 된다. 
+    private List<QuantizedMesh> quantizedMeshes; //TODO streaming을 하지 않을 거라면 level별로 position을 나눌 필요가 없다. index만 나눠지면 된다. 
 
-    public static (NativeArray<float3> vertices, NativeArray<uint> indices, NativeArray<float2> uvs, List<int> subMeshIndexCount) Decode(POPBuffer popBuffer, int quantizationLevel)
+    public static POPBuffer GeneratePopBuffer(UnityEngine.Mesh mesh)
     {
-        List<uint> indices = new List<uint>();
-        List<int> subMeshStartAndCount = new List<int>();
-        int submeshCount = popBuffer.levels[0].cells.Count;
-        for (int i = 0; i < submeshCount; i++)
-        {
-            for (int j = 0; j < quantizationLevel; j++)
-            {
-                indices.AddRange(popBuffer.levels[j].cells[i].cells.SelectMany(tri => new uint[]{ (uint)tri[0], (uint)tri[1], (uint)tri[2]}));
-            }
-            subMeshStartAndCount.Add(indices.Count - subMeshStartAndCount.Sum());
-        }
-
-        List<Vector3> positions = popBuffer.levels.Take(quantizationLevel).Select(level => level.positions)
-            .SelectMany(positions => positions).ToList();
-        List<Vector2> uvs = popBuffer.levels.Take(quantizationLevel).Select(level => level.uvs)
-            .SelectMany(uvs => uvs).ToList();
-        
-        if (indices.Count != 0 && positions.Count != 0) //TODO 왜 여기서 positions을 또 quantize 하는거? 
-        {
-            positions = QuantizeVertices(positions, quantizationLevel, popBuffer.boundingBox);
-            positions = RescaleVertices(positions, popBuffer.boundingBox);
-        }
-        
-        return (NativeConverter.GetNativeVertexArrays(positions.ToArray()), new NativeArray<uint>(indices.ToArray(), Allocator.Temp), NativeConverter.GetNativeVertexArrays(uvs.ToArray()), subMeshStartAndCount);
-    }
-    
-   
-
-    public static POPBuffer GeneratePopBuffer(Mesh mesh)
-    {
-        List<Vector3> positions = new List<Vector3>();
-        mesh.GetVertices(positions);
+        List<Vector3> vertices = new List<Vector3>();
+        mesh.GetVertices(vertices);
 
         List<Vector2> uvs = new List<Vector2>();
         mesh.GetUVs(0, uvs);
 
-        List<CellPerSubmesh> cellPerSubMeshes = new List<CellPerSubmesh>();
+        List<SubMeshIndices> meshIndices = new List<SubMeshIndices>();
         for (int i = 0; i < mesh.subMeshCount; i++)
         {
             int[] indices = mesh.GetIndices(i); //TODO 이거 nativeArray PTR로 복사비용 없앨 수 없나?
@@ -261,70 +263,136 @@ class POPBuffer
                     group.ElementAt(1).Elem,
                     group.ElementAt(2).Elem)).ToList(); //TODO 이렇게 긴 LINQ, 최선인가..?
             
-            cellPerSubMeshes.Add(new CellPerSubmesh(cells));
+            meshIndices.Add(new SubMeshIndices(cells));
         }
 
-        return Encode(mesh.bounds, cellPerSubMeshes, positions, uvs, 32);
+        return Encode(mesh.bounds, meshIndices, vertices, uvs, 32);
     }
-
-    static POPBuffer Encode(Bounds boundingBox, List<CellPerSubmesh> cellPerSubMeshes, List<Vector3> positions, List<Vector2> uvs, int maxLevel)
+    
+    static POPBuffer Encode(Bounds boundingBox, List<SubMeshIndices> meshIndices, List<Vector3> positions, List<Vector2> uvs, int maxLevel)
     {
-        List<CellPerLevel> buckets = BuildBuckets(boundingBox, cellPerSubMeshes, positions, maxLevel);
-        List<Level> levels = BuildLevels(buckets, positions, uvs);
+        List<MeshIndices> quantizedMeshIndices = QuantizeMeshIndices(boundingBox, meshIndices, positions, maxLevel);
+        List<QuantizedMesh> levels = ReorderVertexData(quantizedMeshIndices, positions, uvs);
 
-        return new POPBuffer() { boundingBox = boundingBox, levels = levels };
+        return new POPBuffer() { boundingBox = boundingBox, quantizedMeshes = levels };
+    }
+    
+    public static (NativeArray<float3> vertices, NativeArray<uint> indices, NativeArray<float2> uvs, List<int> subMeshIndexCount) Decode(POPBuffer popBuffer, int quantizationLevel)
+    {
+        List<uint> indices = new List<uint>();
+        List<int> subMeshStartAndCount = new List<int>();
+        int submeshCount = popBuffer.quantizedMeshes[0].MeshIndices.Count;
+        for (int i = 0; i < submeshCount; i++)
+        {
+            for (int j = 0; j < quantizationLevel; j++)
+            {
+                indices.AddRange(popBuffer.quantizedMeshes[j].MeshIndices[i].tris.SelectMany(tri => new uint[]{ (uint)tri[0], (uint)tri[1], (uint)tri[2]}));
+            }
+            subMeshStartAndCount.Add(indices.Count - subMeshStartAndCount.Sum());
+        }
+
+        List<Vector3> positions = popBuffer.quantizedMeshes.Take(quantizationLevel).Select(level => level.Vertices)
+            .SelectMany(positions => positions).ToList();
+        List<Vector2> uvs = popBuffer.quantizedMeshes.Take(quantizationLevel).Select(level => level.UVs)
+            .SelectMany(uvs => uvs).ToList();
+        
+        if (indices.Count != 0 && positions.Count != 0) //TODO 왜 여기서 positions을 또 quantize 하는거? 
+        {
+            positions = QuantizeVertices(positions, quantizationLevel, popBuffer.boundingBox);
+            positions = RescaleVertices(positions, popBuffer.boundingBox);
+        }
+        
+        return (NativeConverter.GetNativeVertexArrays(positions.ToArray()), new NativeArray<uint>(indices.ToArray(), Allocator.Temp), NativeConverter.GetNativeVertexArrays(uvs.ToArray()), subMeshStartAndCount);
     }
 
-    static Bounds ComputeBoundingBox(List<Vector3> positions) //TODO 최적화 된 버전 찾아보기 -> Bounds 가 Object Space BB를 제공함.
+    static List<MeshIndices> QuantizeMeshIndices(Bounds boundingBox, List<SubMeshIndices> meshIndices, List<Vector3> vertices, int maxLevel)
+    {
+        List<int[]> qLevelsPerSubMesh = new List<int[]>(meshIndices.Count);
+        foreach (var subMeshIndices in meshIndices)
+        {
+            int[] qLevelOfIndex = Enumerable.Repeat(-1, subMeshIndices.tris.Count).ToArray();
+            for (int qLevel = maxLevel; qLevel > 0; qLevel--)
+            {
+                List<Vector3> quantizedPos = QuantizeVertices(vertices, qLevel, boundingBox);
+                List<int> validIndices = ListNonDegenerateCells(subMeshIndices.tris, quantizedPos);
+
+                foreach (var index in validIndices)
+                {
+                    qLevelOfIndex[index] = qLevel;
+                }
+            }
+            qLevelsPerSubMesh.Add(qLevelOfIndex);
+        }
+        
+        List<MeshIndices> meshPerLevel = Enumerable.Range(0, maxLevel).Select(_ => new MeshIndices(qLevelsPerSubMesh.Count)).ToList();
+        for (int i = 0; i < qLevelsPerSubMesh.Count; i++)
+        {
+            int[] qLevels = qLevelsPerSubMesh[i];
+            for(int j = 0; j < qLevels.Length; j++) 
+            {
+                int qLevelOfTriangle = qLevels[j];
+                if(qLevelOfTriangle != -1) 
+                {
+                    meshPerLevel[qLevelOfTriangle - 1][i].Add(meshIndices[i][j]);
+                }
+            }
+        }
+        
+        return meshPerLevel;
+    }
+    
+    static List<QuantizedMesh> ReorderVertexData(List<MeshIndices> quantizedMeshIndices, List<Vector3> vertices, List<Vector2> uvs) //TODO 이게 최선? 
+    {
+        List<QuantizedMesh> levels = new List<QuantizedMesh>(quantizedMeshIndices.Count);
+        
+        Dictionary<int, int> indexLookup = new Dictionary<int, int>();
+        int lastIndex = 0;
+        List<int> reorderedTri = new List<int>();
+        foreach (var sourceMeshIndices in quantizedMeshIndices)
+        {
+            MeshIndices reorderedMeshIndices = new MeshIndices(0);
+            List<Vector3> reorderedVertices = new List<Vector3>();
+            List<Vector2> reorderedUVs = new List<Vector2>();
+            
+            foreach (var subMeshIndices in sourceMeshIndices)
+            {
+                List<Triangle> tris = subMeshIndices.tris;
+                List<Triangle> reorderedTris = new List<Triangle>();
+                
+                foreach (var tri in tris)
+                {
+                    reorderedTri.Clear();
+                    foreach (var vertexIndex in tri)
+                    {
+                        if (!indexLookup.ContainsKey(vertexIndex))
+                        {
+                            reorderedVertices.Add(vertices[vertexIndex]);
+                            reorderedUVs.Add(uvs[vertexIndex]);
+                            indexLookup.Add(vertexIndex, lastIndex++);
+                        }
+                        reorderedTri.Add(indexLookup[vertexIndex]);
+                    }
+                    reorderedTris.Add(new Triangle(reorderedTri[0],reorderedTri[1],reorderedTri[2]));
+                }
+                reorderedMeshIndices.Add(new SubMeshIndices(reorderedTris));
+            }
+            
+            levels.Add(new QuantizedMesh(reorderedMeshIndices, reorderedVertices, reorderedUVs));
+        }
+        return levels;
+    }
+    
+    static Bounds ComputeBoundingBox(List<Vector3> vertices) //TODO 최적화 된 버전 찾아보기 -> Bounds 가 Object Space BB를 제공함.
     {
         Vector3 min = Vector3.positiveInfinity, max = Vector3.negativeInfinity;
-        positions.ForEach((elem) =>
+        vertices.ForEach((vert) =>
         {
-            min = Vector3.Min(min, elem);
-            max = Vector3.Max(max, elem);
+            min = Vector3.Min(min, vert);
+            max = Vector3.Max(max, vert);
         });
         return new Bounds((min + max) / 2, max - min);
     }
-
-    static List<CellPerLevel> BuildBuckets(Bounds boundingBox, List<CellPerSubmesh> cellPerSubMeshes, List<Vector3> positions, int maxLevel)
-    {
-        List<int[]> cellLevelPerSubMeshes = new List<int[]>(cellPerSubMeshes.Count); //cellLevelPerSubMeshes[0] => subMesh0의 각 cell들의 quantizationLevel을 의미. 
-        for (int i = 0; i < cellPerSubMeshes.Count; i++)
-        {
-            CellPerSubmesh cellPerSubMesh = cellPerSubMeshes[i];
-            int[] cellLevels = Enumerable.Repeat(-1, cellPerSubMesh.cells.Count).ToArray();
-            for (int level = maxLevel; level > 0; level--)
-            {
-                List<Vector3> quantizedPositions = QuantizeVertices(positions, level, boundingBox);
-                List<int> cellIndices = ListNonDegenerateCells(cellPerSubMesh.cells, quantizedPositions);
-
-                foreach (var index in cellIndices)
-                {
-                    cellLevels[index] = level;
-                }
-            }
-
-            cellLevelPerSubMeshes.Add(cellLevels);
-        }
-        
-        List<CellPerLevel> buckets = Enumerable.Range(0, maxLevel).Select(_ => new CellPerLevel(cellLevelPerSubMeshes.Count)).ToList(); 
-        //buckets[0] => 0레벨에서의 subMesh0과 subMesh1의 삼각형들을 가지고 있음. 
-        for (int i = 0; i < cellLevelPerSubMeshes.Count; i++)
-        {
-            int[] cellLevels = cellLevelPerSubMeshes[i]; //i번째 subMesh의 cell들의 quantizationLevel
-            for(int j = 0; j < cellLevels.Length; j++) 
-            {
-                int cellLevel = cellLevels[j]; //j번째 cell(삼각형)의 quantizationLevel
-                if(cellLevel != -1) 
-                {
-                    buckets[cellLevel - 1][i].Add(cellPerSubMeshes[i][j]);
-                }
-            }
-        }
-        
-        return buckets;
-    }
-
+    
     static List<Vector3> QuantizeVertices(List<Vector3> positions, int bits, Bounds sourceBound)
     {
         if (positions.Count == 0)
@@ -383,50 +451,6 @@ class POPBuffer
     static bool IsTriangleDegenerate(Vector3 a, Vector3 b, Vector3 c)
     {
         return a == b || b == c  || c == a;
-    }
-    
-    static List<Level> BuildLevels(List<CellPerLevel> buckets, List<Vector3> positions, List<Vector2> uvs) //TODO 이게 최선? 
-    {
-        List<Level> levels = new List<Level>(buckets.Count);
-        Dictionary<int, int> indexLookup = new Dictionary<int, int>();
-        int lastIndex = 0;
-        
-        for (int i = 0; i < buckets.Count; i++)
-        {
-            CellPerLevel cellPerLevel = buckets[i];
-            CellPerLevel newCellPerLevel = new CellPerLevel(0);
-            List<Vector3> newPositions = new List<Vector3>();
-            List<Vector2> newUVs = new List<Vector2>();
-            
-            for (int j = 0; j < cellPerLevel.Count; j++)
-            {
-                List<Triangle> cells = cellPerLevel[j].cells;
-                List<Triangle> newCells = new List<Triangle>();
-                
-                for (int k = 0; k < cells.Count; k++)
-                {
-                    Triangle tri = cells[k];
-                    Triangle newTri = default;
-                    for (int l = 0; l < 3; l++)
-                    {
-                        if (!indexLookup.ContainsKey(tri[l]))
-                        {
-                            newPositions.Add(positions[tri[l]]);
-                            newUVs.Add(uvs[tri[l]]);
-                            indexLookup.Add(tri[l], lastIndex++);
-                        }
-                        newTri[l] = indexLookup[tri[l]];
-                    }
-                
-                    newCells.Add(newTri);
-                }
-                
-                newCellPerLevel.Add(new CellPerSubmesh(newCells));
-            }
-            
-            levels.Add(new Level(newCellPerLevel, newPositions, newUVs));
-        }
-        return levels;
     }
 }
 
