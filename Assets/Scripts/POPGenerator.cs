@@ -162,48 +162,10 @@ class POPBuffer
             positions = RescaleVertices(positions, popBuffer.boundingBox);
         }
         
-        return (GetNativeVertexArrays(positions.ToArray()), new NativeArray<uint>(indices.ToArray(), Allocator.Temp), GetNativeVertexArrays(uvs.ToArray()), subMeshStartAndCount);
+        return (NativeConverter.GetNativeVertexArrays(positions.ToArray()), new NativeArray<uint>(indices.ToArray(), Allocator.Temp), NativeConverter.GetNativeVertexArrays(uvs.ToArray()), subMeshStartAndCount);
     }
     
-    public static unsafe NativeArray<float3> GetNativeVertexArrays(Vector3[] vertexArray) //https://gist.github.com/LotteMakesStuff/c2f9b764b15f74d14c00ceb4214356b4
-    {
-        // create a destination NativeArray to hold the vertices
-        NativeArray<float3> verts = new NativeArray<float3>(vertexArray.Length, Allocator.Persistent,
-            NativeArrayOptions.UninitializedMemory);
-
-        // pin the mesh's vertex buffer in place...
-        fixed (void* vertexBufferPointer = vertexArray)
-        {
-            // ...and use memcpy to copy the Vector3[] into a NativeArray<floar3> without casting. whould be fast!
-            UnsafeUtility.MemCpy(NativeArrayUnsafeUtility.GetUnsafeBufferPointerWithoutChecks(verts),
-                vertexBufferPointer, vertexArray.Length * (long) UnsafeUtility.SizeOf<float3>());
-        }
-        // we only hve to fix the .net array in place, the NativeArray is allocated in the C++ side of the engine and
-        // wont move arround unexpectedly. We have a pointer to it not a reference! thats basically what fixed does,
-        // we create a scope where its 'safe' to get a pointer and directly manipulate the array
-
-        return verts;
-    }
-    
-    public static unsafe NativeArray<float2> GetNativeVertexArrays(Vector2[] vertexArray) //https://gist.github.com/LotteMakesStuff/c2f9b764b15f74d14c00ceb4214356b4
-    {
-        // create a destination NativeArray to hold the vertices
-        NativeArray<float2> verts = new NativeArray<float2>(vertexArray.Length, Allocator.Persistent,
-            NativeArrayOptions.UninitializedMemory);
-
-        // pin the mesh's vertex buffer in place...
-        fixed (void* vertexBufferPointer = vertexArray)
-        {
-            // ...and use memcpy to copy the Vector3[] into a NativeArray<floar3> without casting. whould be fast!
-            UnsafeUtility.MemCpy(NativeArrayUnsafeUtility.GetUnsafeBufferPointerWithoutChecks(verts),
-                vertexBufferPointer, vertexArray.Length * (long) UnsafeUtility.SizeOf<float2>());
-        }
-        // we only hve to fix the .net array in place, the NativeArray is allocated in the C++ side of the engine and
-        // wont move arround unexpectedly. We have a pointer to it not a reference! thats basically what fixed does,
-        // we create a scope where its 'safe' to get a pointer and directly manipulate the array
-
-        return verts;
-    }
+   
 
     public static POPBuffer GeneratePopBuffer(Mesh mesh)
     {
