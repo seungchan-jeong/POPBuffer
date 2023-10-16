@@ -145,12 +145,7 @@ class POPBuffer
             }
             subMeshStartAndCount.Add(indices.Count - subMeshStartAndCount.Sum());
         }
-        
-        // List<uint> indices = popBuffer.levels.Take(quantizationLevel)
-        //     .Select(level => level.cells.cellPerSubmeshes).SelectMany(cellPerSubmeshes => cellPerSubmeshes)
-        //     .Select(cellPerSubmesh => cellPerSubmesh.cells).SelectMany(cells => cells)
-        //     .SelectMany(tri => new uint[]{ (uint)tri.x, (uint)tri.y, (uint)tri.z}).ToList();
-        
+
         List<Vector3> positions = popBuffer.levels.Take(quantizationLevel).Select(level => level.positions)
             .SelectMany(positions => positions).ToList();
         List<Vector2> uvs = popBuffer.levels.Take(quantizationLevel).Select(level => level.uvs)
