@@ -20,7 +20,7 @@ public class POPGenerator : MonoBehaviour
     
     private POPBuffer _popBuffer;
 
-    private UnityEngine.Mesh _mesh;
+    private Mesh _mesh;
     // Start is called before the first frame update
     private void Start()
     {
@@ -39,7 +39,7 @@ public class POPGenerator : MonoBehaviour
         ApplyPOPBuffer(_mesh, quantizationLevel);
     }
 
-    private void ApplyPOPBuffer(UnityEngine.Mesh mesh, int quantizationLevel)
+    private void ApplyPOPBuffer(Mesh mesh, int quantizationLevel)
     {
         (NativeArray<float3> verticesNative, NativeArray<uint> indicesNative, NativeArray<float2> uvNative, List<int> subMeshIndexCount) = POPBuffer.Decode(_popBuffer, quantizationLevel);
         
@@ -47,9 +47,9 @@ public class POPGenerator : MonoBehaviour
         int vertexCount = verticesNative.Length;
         int triangleIndexCount = indicesNative.Length;
 
-        UnityEngine.Mesh.MeshDataArray meshDataArray = UnityEngine.Mesh.AllocateWritableMeshData(1); //TODO : submesh Count로 대체
+        Mesh.MeshDataArray meshDataArray = Mesh.AllocateWritableMeshData(1); //TODO : submesh Count로 대체
         //?? 이걸 submesh Count로 바꾸면, meshData마다 똑같은 vertex를 설정해줘야하는건가? 아니면 0번째만 vertex설정해주면 되는건가? 알아보기 
-        UnityEngine.Mesh.MeshData meshData = meshDataArray[0];
+        Mesh.MeshData meshData = meshDataArray[0];
 
         var vertexAttributes = new NativeArray<VertexAttributeDescriptor>(vertexAttributeCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
         vertexAttributes[0] = new VertexAttributeDescriptor(dimension: 3);
@@ -79,7 +79,7 @@ public class POPGenerator : MonoBehaviour
         }
         
         // mesh.bounds = mesh.bounds;  //TODO POP bound로 대체
-        UnityEngine.Mesh.ApplyAndDisposeWritableMeshData(meshDataArray, mesh);
+        Mesh.ApplyAndDisposeWritableMeshData(meshDataArray, mesh);
         mesh.RecalculateNormals();
         
         triangleSlider.SetCurrentValue(indicesNative.Length);
@@ -244,7 +244,7 @@ class POPBuffer
     private Bounds boundingBox;
     private List<QuantizedMesh> quantizedMeshes; //TODO streaming을 하지 않을 거라면 level별로 position을 나눌 필요가 없다. index만 나눠지면 된다. 
 
-    public static POPBuffer GeneratePopBuffer(UnityEngine.Mesh mesh)
+    public static POPBuffer GeneratePopBuffer(Mesh mesh)
     {
         List<Vector3> vertices = new List<Vector3>();
         mesh.GetVertices(vertices);
