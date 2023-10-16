@@ -21,7 +21,7 @@ public class POPGenerator : MonoBehaviour
     private POPBuffer _popBuffer;
 
     private Mesh _mesh;
-    // Start is called before the first frame update
+  
     private void Start()
     {
         MeshFilter meshFilter = GetComponent<MeshFilter>();
@@ -43,7 +43,7 @@ public class POPGenerator : MonoBehaviour
     {
         (NativeArray<float3> verticesNative, NativeArray<uint> indicesNative, NativeArray<float2> uvNative, List<int> subMeshIndexCount) = POPBuffer.Decode(_popBuffer, quantizationLevel);
         
-        int vertexAttributeCount = 2; //Position UV (Normal, Tangent, Vertex Color etc...)
+        const int vertexAttributeCount = 2; //Position UV (Normal, Tangent, Vertex Color etc...)
         int vertexCount = verticesNative.Length;
         int triangleIndexCount = indicesNative.Length;
 
@@ -85,157 +85,6 @@ public class POPGenerator : MonoBehaviour
         triangleSlider.SetCurrentValue(indicesNative.Length);
         vertexSlider.SetCurrentValue(verticesNative.Length);
         quantizationSlider.SetCurrentValue(quantizationLevel);
-    }
-}
-
-struct Triangle : IEnumerable<int>
-{
-    private int p1;
-    private int p2;
-    private int p3;
-
-    public Triangle(int p1, int p2, int p3)
-    {
-        this.p1 = p1;
-        this.p2 = p2;
-        this.p3 = p3;
-    }
-
-    public int this[int index]
-    {
-        get
-        {
-            switch (index)
-            {
-                case 0:
-                    return this.p1;
-                case 1:
-                    return this.p2;
-                case 2:
-                    return this.p3;
-                default:
-                    throw new IndexOutOfRangeException("Only 3 points in Triangle.");
-            }
-        }
-        set
-        {
-            switch (index)
-            {
-                case 0:
-                    p1 = value;
-                    break;
-                case 1:
-                    p2 = value;
-                    break;
-                case 2:
-                    p3 = value;
-                    break;
-                default:
-                    throw new IndexOutOfRangeException("Only 3 points in Triangle.");
-            }
-        }
-    }
-
-    public IEnumerator<int> GetEnumerator()
-    {
-        yield return p1;
-        yield return p2;
-        yield return p3;
-    }
-
-    IEnumerator IEnumerable.GetEnumerator()
-    {
-        return GetEnumerator();
-    }
-}
-
-class QuantizedMesh
-{
-    public QuantizedMesh(MeshIndices meshIndices, List<Vector3> vertices, List<Vector2> uvs)
-    {
-        this.MeshIndices = meshIndices;
-        this.Vertices = vertices;
-        this.UVs = uvs;
-    }
-    
-    public MeshIndices MeshIndices { get; } //삼각형 index
-    public List<Vector3> Vertices { get; } //삼각형 vertex
-    public List<Vector2> UVs { get; }
-}
-
-class SubMeshIndices : IEnumerable<Triangle>
-{
-    public List<Triangle> tris;
-
-    public SubMeshIndices(List<Triangle> tris)
-    {
-        this.tris = tris;
-    }
-
-    public SubMeshIndices(int count)
-    {
-        tris = new List<Triangle>(count);
-    }
-    
-    public Triangle this[int index]
-    {
-        get => tris[index];
-        set => tris[index] = value;
-    }
-    
-    public int Count
-    {
-        get => tris.Count;
-    }
-
-    public void Add(Triangle elem)
-    {
-        tris.Add(elem);
-    }
-
-    public IEnumerator<Triangle> GetEnumerator()
-    {
-        return tris.GetEnumerator();
-    }
-
-    IEnumerator IEnumerable.GetEnumerator()
-    {
-        return GetEnumerator();
-    }
-}
-class MeshIndices : IEnumerable<SubMeshIndices>
-{
-    public List<SubMeshIndices> subMeshes;
-
-    public MeshIndices(int count)
-    {
-        subMeshes = Enumerable.Range(0, count).Select(_ => new SubMeshIndices(0)).ToList(); 
-    }
-
-    public SubMeshIndices this[int index]
-    {
-        get => subMeshes[index];
-        set => subMeshes[index] = value;
-    }
-    
-    public int Count
-    {
-        get => subMeshes.Count;
-    }
-
-    public void Add(SubMeshIndices elem)
-    {
-        subMeshes.Add(elem);
-    }
-
-    public IEnumerator<SubMeshIndices> GetEnumerator()
-    {
-        return subMeshes.GetEnumerator();
-    }
-
-    IEnumerator IEnumerable.GetEnumerator()
-    {
-        return GetEnumerator();
     }
 }
 
@@ -281,8 +130,8 @@ class POPBuffer
     {
         List<uint> indices = new List<uint>();
         List<int> subMeshStartAndCount = new List<int>();
-        int submeshCount = popBuffer.quantizedMeshes[0].MeshIndices.Count;
-        for (int i = 0; i < submeshCount; i++)
+        int subMeshCount = popBuffer.quantizedMeshes[0].MeshIndices.Count;
+        for (int i = 0; i < subMeshCount; i++)
         {
             for (int j = 0; j < quantizationLevel; j++)
             {
@@ -415,7 +264,7 @@ class POPBuffer
         return positions.Select((elem) => Vector3.Scale(elem - sourceBound.min, sourceSizeOverTargetSize) + targetBounds.min).ToList();
     }
     
-    static List<Vector3> RescaleVertices(List<Vector3> positions, Bounds targetBounds,  Bounds sourceBound) //TODO ㅠ 이렇게 밖에 못하나..? 
+    static List<Vector3> RescaleVertices(List<Vector3> positions, Bounds targetBounds, Bounds sourceBound) //TODO ㅠ 이렇게 밖에 못하나..? 
     {
         Vector3 sourceSizeOverTargetSize = Vector3.Scale(targetBounds.size, 
                 new Vector3(1 / sourceBound.size.x, 1 / sourceBound.size.y, 1 / sourceBound.size.z));
@@ -440,7 +289,7 @@ class POPBuffer
             if (!IsTriangleDegenerate(
                     quantizedPositions[tri[0]],
                     quantizedPositions[tri[1]],
-                    quantizedPositions[tri[2]] ))
+                    quantizedPositions[tri[2]]))
             {
                 nonDegenerateCells.Add(i);
             }
