@@ -88,7 +88,56 @@ public class POPGenerator : MonoBehaviour
     }
 }
 
-struct Level
+struct Triangle
+{
+    private int p1;
+    private int p2;
+    private int p3;
+
+    public Triangle(int p1, int p2, int p3)
+    {
+        this.p1 = p1;
+        this.p2 = p2;
+        this.p3 = p3;
+    }
+
+    public int this[int index]
+    {
+        get
+        {
+            switch (index)
+            {
+                case 0:
+                    return this.p1;
+                case 1:
+                    return this.p2;
+                case 2:
+                    return this.p3;
+                default:
+                    throw new IndexOutOfRangeException("Only 3 points in Triangle.");
+            }
+        }
+        set
+        {
+            switch (index)
+            {
+                case 0:
+                    p1 = value;
+                    break;
+                case 1:
+                    p2 = value;
+                    break;
+                case 2:
+                    p3 = value;
+                    break;
+                default:
+                    throw new IndexOutOfRangeException("Only 3 points in Triangle.");
+            }
+        }
+    }
+}
+
+class Level
 {
     public Level(CellPerLevel cells, List<Vector3> positions, List<Vector2> uvs)
     {
@@ -102,28 +151,59 @@ struct Level
     public List<Vector2> uvs { get; }
 }
 
-struct CellPerSubmesh
+class CellPerSubmesh
 {
-    public List<Vector3Int> cells;
+    public List<Triangle> cells;
 
-    public CellPerSubmesh(List<Vector3Int> cells)
+    public CellPerSubmesh(List<Triangle> cells)
     {
         this.cells = cells;
     }
 
     public CellPerSubmesh(int count)
     {
-        cells = new List<Vector3Int>(count);
+        cells = new List<Triangle>(count);
+    }
+    
+    public Triangle this[int index]
+    {
+        get => cells[index];
+        set => cells[index] = value;
+    }
+    
+    public int Count
+    {
+        get => cells.Count;
+    }
+
+    public void Add(Triangle elem)
+    {
+        cells.Add(elem);
     }
 }
-struct CellPerLevel
+class CellPerLevel
 {
-    //TODO 아래 collection을 field로 접근하게 하지말고, 이 struct/class자체가 [,]를 override해서 접근할 수 있게 바꿔야 코드가 깔끔해짐.
     public List<CellPerSubmesh> cellPerSubmeshes; //List<List<Vector3Int>> 
 
     public CellPerLevel(int count)
     {
         cellPerSubmeshes = Enumerable.Range(0, count).Select(_ => new CellPerSubmesh(0)).ToList(); 
+    }
+
+    public CellPerSubmesh this[int index]
+    {
+        get => cellPerSubmeshes[index];
+        set => cellPerSubmeshes[index] = value;
+    }
+    
+    public int Count
+    {
+        get => cellPerSubmeshes.Count;
+    }
+
+    public void Add(CellPerSubmesh elem)
+    {
+        cellPerSubmeshes.Add(elem);
     }
 }
 
@@ -136,12 +216,12 @@ class POPBuffer
     {
         List<uint> indices = new List<uint>();
         List<int> subMeshStartAndCount = new List<int>();
-        int submeshCount = popBuffer.levels[0].cells.cellPerSubmeshes.Count;
+        int submeshCount = popBuffer.levels[0].cells.Count;
         for (int i = 0; i < submeshCount; i++)
         {
             for (int j = 0; j < quantizationLevel; j++)
             {
-                indices.AddRange(popBuffer.levels[j].cells.cellPerSubmeshes[i].cells.SelectMany(tri => new uint[]{ (uint)tri.x, (uint)tri.y, (uint)tri.z}));
+                indices.AddRange(popBuffer.levels[j].cells[i].cells.SelectMany(tri => new uint[]{ (uint)tri[0], (uint)tri[1], (uint)tri[2]}));
             }
             subMeshStartAndCount.Add(indices.Count - subMeshStartAndCount.Sum());
         }
@@ -174,9 +254,9 @@ class POPBuffer
         for (int i = 0; i < mesh.subMeshCount; i++)
         {
             int[] indices = mesh.GetIndices(i); //TODO 이거 nativeArray PTR로 복사비용 없앨 수 없나?
-            List<Vector3Int> cells = indices.Select((elem, index) => new { Elem = elem, Index = index })
+            List<Triangle> cells = indices.Select((elem, index) => new { Elem = elem, Index = index })
                 .GroupBy(x => x.Index / 3)
-                .Select(group => new Vector3Int(
+                .Select(group => new Triangle(
                     group.ElementAt(0).Elem,
                     group.ElementAt(1).Elem,
                     group.ElementAt(2).Elem)).ToList(); //TODO 이렇게 긴 LINQ, 최선인가..?
@@ -237,7 +317,7 @@ class POPBuffer
                 int cellLevel = cellLevels[j]; //j번째 cell(삼각형)의 quantizationLevel
                 if(cellLevel != -1) 
                 {
-                    buckets[cellLevel - 1].cellPerSubmeshes[i].cells.Add(cellPerSubMeshes[i].cells[j]);
+                    buckets[cellLevel - 1][i].Add(cellPerSubMeshes[i][j]);
                 }
             }
         }
@@ -283,7 +363,7 @@ class POPBuffer
         ).ToList();
     }
 
-    static List<int> ListNonDegenerateCells(List<Vector3Int> cells, List<Vector3> quantizedPositions)
+    static List<int> ListNonDegenerateCells(List<Triangle> cells, List<Vector3> quantizedPositions)
     {
         List<int> nonDegenerateCells = new List<int>();
         for (int i = 0; i < cells.Count; i++)
@@ -318,15 +398,15 @@ class POPBuffer
             List<Vector3> newPositions = new List<Vector3>();
             List<Vector2> newUVs = new List<Vector2>();
             
-            for (int j = 0; j < cellPerLevel.cellPerSubmeshes.Count; j++)
+            for (int j = 0; j < cellPerLevel.Count; j++)
             {
-                List<Vector3Int> cells = cellPerLevel.cellPerSubmeshes[j].cells;
-                List<Vector3Int> newCells = new List<Vector3Int>();
+                List<Triangle> cells = cellPerLevel[j].cells;
+                List<Triangle> newCells = new List<Triangle>();
                 
                 for (int k = 0; k < cells.Count; k++)
                 {
-                    Vector3Int tri = cells[k];
-                    Vector3Int newTri = Vector3Int.zero;
+                    Triangle tri = cells[k];
+                    Triangle newTri = default;
                     for (int l = 0; l < 3; l++)
                     {
                         if (!indexLookup.ContainsKey(tri[l]))
@@ -341,7 +421,7 @@ class POPBuffer
                     newCells.Add(newTri);
                 }
                 
-                newCellPerLevel.cellPerSubmeshes.Add(new CellPerSubmesh(newCells));
+                newCellPerLevel.Add(new CellPerSubmesh(newCells));
             }
             
             levels.Add(new Level(newCellPerLevel, newPositions, newUVs));
