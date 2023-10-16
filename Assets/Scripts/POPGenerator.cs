@@ -47,8 +47,7 @@ public class POPGenerator : MonoBehaviour
         int vertexCount = verticesNative.Length;
         int triangleIndexCount = indicesNative.Length;
 
-        Mesh.MeshDataArray meshDataArray = Mesh.AllocateWritableMeshData(1); //TODO : submesh Count로 대체
-        //?? 이걸 submesh Count로 바꾸면, meshData마다 똑같은 vertex를 설정해줘야하는건가? 아니면 0번째만 vertex설정해주면 되는건가? 알아보기 
+        Mesh.MeshDataArray meshDataArray = Mesh.AllocateWritableMeshData(1);
         Mesh.MeshData meshData = meshDataArray[0];
 
         var vertexAttributes = new NativeArray<VertexAttributeDescriptor>(vertexAttributeCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
@@ -65,7 +64,7 @@ public class POPGenerator : MonoBehaviour
         
         meshData.SetIndexBufferParams(triangleIndexCount, IndexFormat.UInt32);
         NativeArray<uint> indices = meshData.GetIndexData<uint>();
-        indices.CopyFrom(indicesNative);  //TODO 아에 여기다가 맨 처음부터 카피하도록??
+        indices.CopyFrom(indicesNative);
 
         meshData.subMeshCount = mesh.subMeshCount;
         for (int i = 0; i < subMeshIndexCount.Count; i++)
@@ -145,7 +144,7 @@ class POPBuffer
         List<Vector2> uvs = popBuffer.quantizedMeshes.Take(quantizationLevel).Select(level => level.UVs)
             .SelectMany(uvs => uvs).ToList();
         
-        if (indices.Count != 0 && positions.Count != 0) //TODO 왜 여기서 positions을 또 quantize 하는거? 
+        if (indices.Count != 0 && positions.Count != 0)
         {
             positions = QuantizeVertices(positions, quantizationLevel, popBuffer.boundingBox);
             positions = RescaleVertices(positions, popBuffer.boundingBox);
