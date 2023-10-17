@@ -119,12 +119,13 @@ class POPBuffer
     
     static POPBuffer Encode(Bounds boundingBox, List<SubMeshIndices> meshIndices, List<Vector3> positions, List<Vector2> uvs, int maxLevel)
     {
-        List<MeshIndices> quantizedMeshIndices = QuantizeMeshIndices(boundingBox, meshIndices, positions, maxLevel);
+        HashSet<uint> intersections = GetSubMeshIntersections(meshIndices);
+        List<MeshIndices> quantizedMeshIndices = QuantizeMeshIndices(boundingBox, meshIndices, positions, intersections, maxLevel);
         List<QuantizedMesh> levels = ReorderVertexData(quantizedMeshIndices, positions, uvs);
 
         return new POPBuffer() { boundingBox = boundingBox, quantizedMeshes = levels };
     }
-    
+
     public static (NativeArray<float3> vertices, NativeArray<uint> indices, NativeArray<float2> uvs, List<int> subMeshIndexCount) Decode(POPBuffer popBuffer, int quantizationLevel)
     {
         List<uint> indices = new List<uint>();
@@ -152,8 +153,25 @@ class POPBuffer
         
         return (NativeConverter.GetNativeVertexArrays(positions.ToArray()), new NativeArray<uint>(indices.ToArray(), Allocator.Temp), NativeConverter.GetNativeVertexArrays(uvs.ToArray()), subMeshStartAndCount);
     }
-
-    static List<MeshIndices> QuantizeMeshIndices(Bounds boundingBox, List<SubMeshIndices> meshIndices, List<Vector3> vertices, int maxLevel)
+    
+    static HashSet<uint> GetSubMeshIntersections(List<SubMeshIndices> meshIndices)
+    {
+        HashSet<uint> commonIndices = new HashSet<uint>();
+        HashSet<uint> indexSet = new HashSet<uint>(); 
+        foreach (var p in from subMeshIndices in meshIndices from triangle in subMeshIndices from uint p in triangle select p)
+        {
+            if (!indexSet.Contains(p))
+            {
+                indexSet.Add(p);
+            }
+            else
+            {
+                commonIndices.Add(p);
+            }
+        }
+        return commonIndices;
+    }
+    static List<MeshIndices> QuantizeMeshIndices(Bounds boundingBox, List<SubMeshIndices> meshIndices, List<Vector3> vertices, HashSet<uint> intersections, int maxLevel)
     {
         List<int[]> qLevelsPerSubMesh = new List<int[]>(meshIndices.Count);
         foreach (var subMeshIndices in meshIndices)
@@ -161,7 +179,7 @@ class POPBuffer
             int[] qLevelOfIndex = Enumerable.Repeat(-1, subMeshIndices.tris.Count).ToArray();
             for (int qLevel = maxLevel; qLevel > 0; qLevel--)
             {
-                List<Vector3> quantizedPos = QuantizeVertices(vertices, qLevel, boundingBox);
+                List<Vector3> quantizedPos = QuantizeVertices(vertices, intersections, qLevel, boundingBox);
                 List<int> validIndices = ListNonDegenerateCells(subMeshIndices.tris, quantizedPos);
 
                 foreach (var index in validIndices)
@@ -241,7 +259,7 @@ class POPBuffer
         return new Bounds((min + max) / 2, max - min);
     }
     
-    static List<Vector3> QuantizeVertices(List<Vector3> positions, int bits, Bounds sourceBound)
+    static List<Vector3> QuantizeVertices(List<Vector3> positions, HashSet<uint> intersections, int bits, Bounds sourceBound)
     {
         if (positions.Count == 0)
             return null;
@@ -250,7 +268,7 @@ class POPBuffer
         Vector3 max = Vector3.one * (bits >= (sizeof(int) * 8) ? int.MaxValue : (1 << bits) - 1);
         Bounds targetBounds = new Bounds((max + min) * 0.5f, max - min);
 
-        positions = RescaleVertices(positions, targetBounds, sourceBound);
+        positions = RescaleVertices(positions, intersections, targetBounds, sourceBound);
         positions = FloorVertices(positions);
         return positions;
     }
@@ -263,13 +281,22 @@ class POPBuffer
         return positions.Select((elem) => Vector3.Scale(elem - sourceBound.min, sourceSizeOverTargetSize) + targetBounds.min).ToList();
     }
     
-    static List<Vector3> RescaleVertices(List<Vector3> positions, Bounds targetBounds, Bounds sourceBound) //TODO ㅠ 이렇게 밖에 못하나..? 
+    static List<Vector3> RescaleVertices(List<Vector3> positions, HashSet<uint> intersections, Bounds targetBounds, Bounds sourceBound) //TODO ㅠ 이렇게 밖에 못하나..? 
     {
         Vector3 sourceSizeOverTargetSize = Vector3.Scale(targetBounds.size, 
                 new Vector3(1 / sourceBound.size.x, 1 / sourceBound.size.y, 1 / sourceBound.size.z));
-        return positions.Select((elem) => Vector3.Scale(elem - sourceBound.min, sourceSizeOverTargetSize) + targetBounds.min).ToList();
+        
+        return positions.Select((p, i) => new { pos = p, index = i }).
+            Select((elem) =>
+            {
+                if (intersections.Contains((uint)elem.index))
+                {
+                    return elem.pos;
+                }
+                return Vector3.Scale(elem.pos - sourceBound.min, sourceSizeOverTargetSize) + targetBounds.min;
+            }).ToList();
     }
-    
+
     static List<Vector3> FloorVertices(List<Vector3> positions) //TODO ㅠ 이렇게 밖에 못하나..? 
     {
         return positions.Select((elem) => new Vector3(
